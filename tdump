@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+usage() {
+  cat <<EOF
+usage: $(basename "$0") [interface] [flags] [filter]
+
+Examples:
+       ./$(basename "$0") pflog0 -en port '(22 or 80)'
+       ./$(basename "$0") wlan0 -I
+EOF
+	exit 0
+}
+
+main() {
+  if [ $# -lt 1 ]; then
+	  usage
+  fi
+
+  tcpdump -lt -i "$@"
+}
+
+main "$@"

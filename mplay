@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+main () {
+  pid=$(pgrep -fl `basename "$0"` | grep -v nvim)
+  if [ -n "$pid" ]; then
+    exit 0
+  fi
+
+  _mediadir=$1
+  if [ -z $_mediadir ]; then
+    _mediadir=~/docs 
+  fi
+
+  while true; do
+    _results=$(find $_mediadir -type f -name "*.flac" -exec echo '"{}"' \; | sed -n 's,.*/\(.*\)\.flac\",\1,p')
+    _random=$(echo "$_results" | sort -R | head -n1)
+
+    find $_mediadir -type f -name $(printf "%s*" $_random) -exec echo '"{}"' \; | xargs mpv --no-audio-display
+  done
+}
+
+main "$@"

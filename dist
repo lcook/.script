@@ -1,0 +1,84 @@
+#!/usr/bin/env sh
+# shellcheck disable=SC2086
+# vim: et ts=2 shiftwidth=2 sts=2
+
+trap cleanup HUP INT QUIT ABRT TERM
+
+cleanup ()
+{
+  echo "Unable to create tar archive or received signal interupt.  Cleaning up." >&2
+  for _dir in $dirs; do
+    archive=/tmp/$(echo "$_dir" | sed -e 's,^\.\(.*\)\.d,\1,' -e 's,^\.local\/share\/,,').tar.gz
+    if [ -f "$archive" ]; then
+      rm -f "$archive"
+    fi
+  done
+}
+
+usage ()
+{
+  cat <<EOF
+usage:   $(basename "$0") [-fhils]
+
+Distribute local fonts and/or shell configuration
+through a tar archive.
+
+Options: -f create archive including local font files
+         -h display this usage page
+         -i include shell history
+         -l include *.local files from shell configuration
+         -s create archive including local shell configuration files
+EOF
+  exit 0
+}
+
+main ()
+{
+  if [ $# -lt 1 ]; then
+    usage
+  fi  
+
+  excludes="*.local .history"
+  while getopts ":fhils" opt; do
+    case $opt in
+      f)  dirs="$dirs .local/share/fonts" ;;
+      # This can be a bit confusing to read at first glance.
+      #
+      # By default, we have an exclusion list of both the history
+      # and *.local shell file(s).  When either -h or -l is 
+      # passed, it is implied that the corresponding files will
+      # be included in the resulting tar archive; so here we
+      # remove either (or both) file(s) from the final exclusion
+      # ($excludes) list that is later on used.
+      i)  excludes=$(echo "$excludes" | sed 's,.history,,') ;;
+      l)  excludes=$(echo "$excludes" | sed 's,*.local,,')  ;;
+      s)  dirs="$dirs .shrc.d" ;;
+      *)  usage ;;
+    esac
+  done
+
+  if [ -n "$excludes" ]; then
+    for _excl in $excludes; do
+      # Build command-line options for tar exclusion list.  E.g.;
+      # the default (neither -h or -l passed) will result in the
+      # following:
+      #
+      # --exclude *.local --exclude .history
+      excludes=$(echo "$excludes" | sed "s,$_excl,--exclude $_excl,")
+    done
+  fi
+    
+  for _dir in $dirs; do
+    archive=/tmp/$(echo "$_dir" | sed -e 's,^\.\(.*\).d,\1,' -e 's,^\.local\/share\/,,').tar.gz
+    (cd ~ || return; tar cfv "$archive" \
+      --exclude-vcs $excludes -C "$_dir" . > /dev/null 2>&1); rc=$?
+    if [ $rc -ne 0 ]; then
+      cleanup
+      exit 1
+    fi
+
+    echo "Archive be located at $archive."
+  done
+}
+
+main "$@"

@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+main ()
+{
+  prog="portsync"
+  if [ -z "$(command -v $prog)" ]; then
+    echo "portutil is required but not installed.  Install github.com/lcook/portsync and try again." >&2
+    exit 1
+  fi
+  $prog fetch --format "%o" | fzf --multi \
+    --header "Select port(s) to update" --preview "pkg rquery -r FreeBSD '%e' {}" --preview-window=up |\
+    xargs $prog update -o
+}
+
+main "$@"

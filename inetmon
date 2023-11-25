@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+main ()
+{
+  while true; do clear;
+    netstat -4 "$@" && sleep 0.75
+  done
+}
+
+main "$@"

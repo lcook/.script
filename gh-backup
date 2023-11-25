@@ -1,0 +1,125 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+trap cleanup HUP INT QUIT ABRT TERM
+
+cleanup ()
+{
+  printf "\nUnable to create tar archive or received signal interupt.  Cleaning up.\n" >&2
+  if [ -d "$_temp" ]; then
+    rm -rf "$_temp"
+  fi
+  exit 1
+}
+
+clone ()
+{
+  if ! git -C "$1" clone "$2" -q 2>/dev/null; then
+    return 1
+  fi
+}
+
+dep ()
+{
+  _prog=$1
+  if [ -z "$(command -v "$_prog")" ]; then
+    echo "$_prog is required but not installed." >&2
+    exit 1
+  fi
+}
+
+usage ()
+{
+  cat <<EOF
+usage:   $(basename "$0") [-hi] [-u user] [-t token]
+
+Backup GitHub repositories of specified user.
+
+Options: -h         display this usage page
+         -i         interactive mode
+         -u <user>  github user account
+         -t <token> github user access token
+EOF
+  exit 0
+}
+
+main ()
+{
+  if [ $# -lt 1 ]; then
+    usage
+  fi
+
+  while getopts "u:t:hi" opt; do
+    case $opt in
+      i)  interactive=1 ;;
+      u)  user=$OPTARG  ;;
+      t)  token=$OPTARG ;;
+      *)  usage ;;
+    esac
+  done
+
+  for _prog in curl git; do dep $_prog; done
+
+  if [ -z "$user" ]; then
+    usage
+  fi
+
+  _auth=""
+  if [ -n "$token" ]; then
+    _auth="Authorization: token $token"
+  fi
+  _base="https://api.github.com/search/repositories?q=user:$user&per_page=1000"
+  _temp=$(mktemp -d)
+  _timestamp=$(date +%d%m%y-%H%M)
+  _backup="${user}_github_$_timestamp"
+
+  echo "Fetching GitHub repository catalogue for $user..."
+  _repo_directory="$_temp/$_backup"
+  _repo_urls=$(curl -s -o /dev/stdout -H "$_auth" "$_base" | sed -n 's,.*ssh_url": "\([^"]*\)".*,\1,p')
+  if [ -z "$_repo_urls" ]; then
+    echo "No repositories were found." >&2
+    exit 1
+  fi
+  _repo_length=$(IFS=$(printf '\n'); echo "$_repo_urls" | wc -l | tr -d ' '; unset IFS)
+  _repo_counter=1
+  echo "$_repo_length repositories found."
+
+  mkdir -p "$_repo_directory"
+
+  echo "Initiating backup process..."
+  for _url in $_repo_urls; do 
+    _clean_name=$(echo "$_url" | sed -n 's,git@.*:\(.*\).git,\1,p')
+    printf "[%d/%d] Cloning %s... " "$_repo_counter" "$_repo_length" "$_clean_name"
+    if [ "$interactive" = 1 ]; then
+      printf "[Y/n]: "
+      read -r _r < /dev/tty
+      case "$_r" in
+        no|n|NO|N|No|nO) ;;
+        # It is unlikely at this point to fail when
+        # cloning the repository, outside of network
+        # issues.  Do not display an error message,
+        # should there be an issue.  This is just so
+        # that the output looks less cluttered/ugly
+        # while accepting user input. 
+        *)  clone "$_repo_directory" "$_url" ;;
+      esac
+    else
+      clone "$_repo_directory" "$_url" && echo "done (ok)" || \
+        echo "done (error occurred during cloning)" >&2
+    fi
+    _repo_counter=$((_repo_counter+1))
+  done
+  
+  tar cfv "/tmp/$_backup.tar.gz" -C "$_temp" . > /dev/null 2>&1; rc=$?
+  if [ $rc -ne 0 ]; then
+    cleanup
+  fi
+  
+  if [ -d "$_temp" ]; then
+    rm -rf "$_temp"
+  fi
+
+  printf "\nArchive located at /tmp/%s.tar.gz\n" "$_backup"
+}
+
+main "$@"

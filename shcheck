@@ -1,0 +1,52 @@
+#!/usr/bin/env sh
+# shellcheck disable=SC1048,SC1072,SC1073,SC1009
+# vim: et ts=2 shiftwidth=2 sts=2
+
+# Very(!) hacky and ugly script to naively
+# check whether certain scripts conform
+# to some kind of (proclaimed) standard.  
+
+dep ()
+{
+  _prog=$1
+  if [ -z "$(command -v "$_prog")" ]; then
+    echo "$_prog is required but not installed." >&2
+    exit 1
+  fi
+}
+
+check_usage ()
+{
+  if [ "$1" = "inetmon" ] || \
+     [ "$1" = "portup" ]  || \
+     [ "$1" = "tdump" ]   || \
+     [ "$1" = "$(basename "$0")" ]; then
+    # Skip these
+  else
+    if [ -z "$($1 -h 2>/dev/null)" ]; then
+      echo
+      echo "'$1' does not appear to have a usage page."
+    fi
+  fi
+}
+
+main ()
+{
+  dep shellcheck
+  for _sh in *; do
+    if [ -f "$_sh" ]; then
+      shellcheck "$_sh"
+      if ! grep -q "vim: et ts=2 shiftwidth=2 sts=2" "$_sh"; then
+        echo
+        echo "'$_sh' does not contain vim directive; either missing or incorrect syntax"
+        echo
+        echo "Amend with the following:"
+        echo "    # vim: et ts=2 shiftwidth=2 sts=2"
+        echo
+      fi
+      check_usage "$_sh"
+    fi
+  done
+}
+
+main "$@"

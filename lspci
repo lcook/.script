@@ -1,0 +1,44 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+usage ()
+{
+  cat <<EOF
+usage:   $(basename "$0") [-huv]
+
+List PCI device names.
+
+Options: -h display this this usage page
+         -u only disply unrecognized PCI devices that
+            do not have a device driver attached to it
+         -v display more verbose information about the
+            PCI devices
+EOF
+  exit 0
+}
+
+main ()
+{
+  while getopts ":huv" opt; do
+    case $opt in
+      u)  unrecognized=1 ;;
+      v)  verbose=1      ;;
+      *)  usage ;;
+    esac
+  done
+
+  for _device in $(pciconf -l | sed -n 's,\(.*@pci.*\):.*,\1,p'); do
+    if [ "$unrecognized" = 1 ] && ! echo "$_device" | grep -q "none.*@"; then
+      continue
+    fi
+   
+    _out=$(pciconf -lv -a "$_device")
+    if [ "$verbose" = 1 ]; then
+      echo "$_out"
+    else
+      echo "$_out" | sed -n "s,.*device.*= '\(.*\)',\1,p"
+    fi
+  done | uniq
+}
+
+main "$@"

@@ -1,0 +1,57 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+usage ()
+{
+  cat <<EOF
+usage:   $(basename "$0") [-h] [-p pool] [-d dataset]
+
+Create a ZFS snapshot of a specified dataset.
+
+Options: -h           display this usage page
+         -p <pool>    storage pool (default: $pool)
+         -d <dataset> dataset (default: $dataset)
+EOF
+  exit 0
+}
+
+main ()
+{
+
+  _pools=$(zpool list -H)
+  
+  if [ "$(echo "$_pools" | wc -l)" -gt 1 ]; then
+    printf "More than one ZFS storage pool found. Specify what one " >&2
+    printf "with the -p flag and try again.\n" >&2
+    exit 1
+  fi
+
+  dataset="usr/home"
+  pool=$(echo "$_pools" | awk '{print $1}')
+  while getopts "dp:h" opt; do
+    case $opt in
+      d)  dataset=$OPTARG ;;
+      p)  if ! zpool list "$OPTARG" > /dev/null 2>&1; then
+            echo "No such storage pool named '$OPTARG'." >&2
+            exit 1
+          fi
+          pool=$OPTARG ;;
+      *)  usage ;;
+    esac
+  done
+  
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "root permission required to create ZFS snapshots." >&2
+    exit 1
+  fi
+  
+  timestamp=$(date +%d%m%y-%H%M)
+  if ! zfs snapshot "$pool/$dataset@$timestamp" > /dev/null 2>&1; then
+    echo "Unable to create snapshot '$pool/$dataset@$timestamp'." >&2
+    exit 1
+  fi
+
+  echo "New snapshot created '$pool/$dataset@$timestamp'."
+}
+
+main "$@"

@@ -1,0 +1,74 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+trap cleanup HUP INT QUIT ABRT TERM
+
+cleanup ()
+{
+  if [ -f "$patch" ]; then
+    rm -f "$patch"
+  fi
+}
+
+usage ()
+{
+  cat <<EOF
+usage:    $(basename "$0") [-h] [-i id] [-d dir]
+
+Apply patch from the FreeBSD Bugzilla instance with
+a corresponding attachment id.  Upon execution, a new
+Git branch named after the id will be created
+with the patch applied.
+
+Options:  -d <dir> directory containing git repository
+          -i <id>  bugzilla attachment id
+          -h       display this usage page
+EOF
+  exit 0
+}
+
+main ()
+{
+  if [ $# -lt 1 ]; then
+    usage
+  fi
+
+  base="https://bz-attachments.freebsd.org/attachment.cgi?id="
+  while getopts "d:i:h" opt; do
+    case $opt in
+      d)  if [ ! -d "$OPTARG" ]; then
+            echo "'$OPTARG' is not a valid directory." >&2
+            exit 1
+          fi
+          _dir=$OPTARG ;;
+      i)  _id=$OPTARG ;;
+      *)  usage ;;
+    esac
+  done
+ 
+  if [ -z "$_id" ] || [ -z "$_dir" ]; then
+    usage
+  fi
+
+  git_branch=bz$_id
+  git_cmd="git -C $_dir"
+ 
+  if $git_cmd branch --list | grep -q "$git_branch"; then
+    echo "Branch '$git_branch' already exists.  Investigate and try again." >&2
+    exit 1
+  fi
+ 
+  patch=$(mktemp -t "$_id")
+  if ! fetch -q -o "$patch" "$base$_id"; then
+    echo "Unable to fetch bugzilla attachment with id '$_id'.  Ensure valid id and try again." >&2
+    cleanup
+    exit 1
+  fi
+ 
+  $git_cmd switch -c "$git_branch"
+  $git_cmd apply "$patch"
+
+  cleanup
+}
+
+main "$@"

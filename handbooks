@@ -1,0 +1,115 @@
+#!/usr/bin/env sh
+# vim: et ts=2 shiftwidth=2 sts=2
+
+dep ()
+{
+  _prog=$1
+  if [ -z "$(command -v "$_prog")" ]; then
+    echo "$_prog is required but not installed." >&2
+    exit 1
+  fi
+}
+
+fetch_cmd ()
+{
+  _local=$1 _remote=$2
+  case $(uname -s) in
+    Linux)    if [ "$(command -v curl)" ]; then
+                _fetch_cmd="curl -s -o $_local $_remote"
+              elif [ "$(command -v wget)" ]; then
+                _fetch_cmd="wget -q -O $_local $_remote"
+              else
+                for _prog in curl wget; do dep $_prog; done
+              fi ;;
+    FreeBSD)  _fetch_cmd="fetch -q -o $_local $_remote" ;;
+  esac
+  
+  eval "$_fetch_cmd"
+}
+
+update ()
+{
+  echo "Fetching FreeBSD book catalogue..."
+  _base="https://download.freebsd.org/doc/$lang/books/"
+  _books=$(fetch_cmd /dev/stdout "$_base" 2>/dev/null | sed -n 's,.*title="\([^"]*\)".*,\1,p')
+  if [ -z "$_books" ]; then
+    echo "Unable to fetch latest books.  Investigate and try again." >&2
+    exit 1
+  fi
+  _books_length=$(IFS=$(printf '\n'); echo "$_books" | wc -l | tr -d ' '; unset IFS)
+  _books_counter=1
+  echo "$_books_length book(s) founds."
+ 
+  echo "Comparing local copies with remote..."
+  for _book in $_books; do
+    _pdf=${_book}_$lang.pdf
+    _local=$docdir/$_pdf 
+    _remote=$_base$_book/$_pdf
+    if [ ! -e "$_local" ]; then
+      printf "[%d/%d] Downloading %s... " "$_books_counter" "$_books_length" "$(basename "$_local")"
+      fetch_cmd "$_local" "$_remote"
+      echo "done"
+      _books_counter=$((_books_counter+1))
+      continue
+    fi
+    printf "[%d/%d] Checking integrity of %s... " "$_books_counter" "$_books_length" "$(basename "$_local")"
+    _local_sha=$(sha256 -q "$_local")
+    _remote_sha=$(fetch_cmd /dev/stdout "$_remote" | sha256)
+    if [ "$_local_sha" != "$_remote_sha" ]; then
+      fetch_cmd "$_local" "$_remote"
+      echo "done (updated)"
+      _books_counter=$((_books_counter+1))
+      continue
+    fi
+    echo "done (ok)"
+
+    _books_counter=$((_books_counter+1))
+  done
+}
+
+usage ()
+{
+  cat <<EOF
+usage:   $(basename "$0") [-hou] [-l lang]
+
+Utility for opening and updating the various
+collection of FreeBSD handbooks.
+
+Options: -l <lang> set language origin to <lang> (default: $lang)
+         -h        display this usage page
+         -o        open selected handbook in zathura
+         -u        update local copies of handbooks
+EOF
+  exit 0
+}
+
+main ()
+{
+  lang="en"
+	if [ $# -lt 1 ]; then
+    usage
+  fi
+
+  docdir=~/.local/share/handbooks
+  if [ ! -d $docdir ]; then
+	  mkdir -p $docdir
+  fi
+
+  while getopts "l:uho" opt; do
+    case $opt in
+      l)  lang=$OPTARG ;;
+      u)  update ;;
+      o)  for _prog in fzf zathura; do dep $_prog; done
+          _books=$(find $docdir -type f -name "*_$lang.pdf" \
+            -exec basename {} \; 2>/dev/null | sort -u)
+          if [ -z "$_books" ]; then
+            echo "No available handbook(s) found.  Re-run with -u and try again" >&2
+            exit 1
+          fi
+          echo "$_books" | fzf | xargs -I% sh -c "(zathura $docdir/% > /dev/null 2>&1 &)" ;;
+      *)  usage ;;
+    esac
+  done
+}
+
+main "$@"
